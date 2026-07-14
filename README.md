@@ -139,7 +139,7 @@ Microdados da **AEEB 2025** (Avaliação Estadual de Educação Básica) — dad
 | Streaming | Kinesis + Lambda | Baixa latência, custo proporcional ao uso |
 | Consulta | Athena | SQL sobre Parquet, sem servidor, $5/TB escaneado |
 
-Ver detalhes em [docs/decisoes-arquiteturais.md](docs/decisoes-arquiteturais.md).
+Ver detalhes em [Docs/decisoes-arquiteturais.md](Docs/decisoes-arquiteturais.md).
 
 ## Monitoramento e FinOps
 
@@ -156,7 +156,7 @@ Ver detalhes em [docs/decisoes-arquiteturais.md](docs/decisoes-arquiteturais.md)
 - Kinesis: 1 shard (escala sob demanda)
 - Budget alerts em $50, $80 e $100/mês
 
-**Estimativa mensal: ~$20/mês** (ver [docs/finops.md](docs/finops.md))
+**Estimativa mensal: ~$20/mês** (ver [Docs/finops.md](Docs/finops.md))
 
 ## Aplicação em Inteligência Artificial
 
@@ -174,7 +174,7 @@ A tabela `features_ml` contém variáveis pré-processadas: taxa atual, metas pr
 ```
 Tech-Challenge-Fase2/
 ├── README.md                          # Este arquivo
-├── docs/
+├── Docs/
 │   ├── decisoes-arquiteturais.md      # Trade-offs técnicos
 │   └── finops.md                      # Estimativa e otimização de custos
 ├── scripts/
