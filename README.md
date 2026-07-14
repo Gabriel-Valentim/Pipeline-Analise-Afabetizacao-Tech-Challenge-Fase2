@@ -226,5 +226,10 @@ Tech-Challenge-Fase2/
 - **Pandas / Matplotlib / Seaborn** — Análise e visualização
 
 ## Equipe
+- Gabriel Valentim De Oliveira Dacie
+- Henrique Ribeiro Rodrigues
+- Nataly Mafra Girotti
+- Samuel Nunes de Oliveira Correia
 
-Tech Challenge — Fase 2 | Pós-graduação em Engenharia de Dados
+Tech Challenge — Fase 2 | Pós-graduação em Ciência de dados
+
