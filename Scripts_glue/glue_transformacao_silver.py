@@ -1,6 +1,5 @@
 """
 AWS Glue Job - Transformacao Bronze -> Silver
-Pipeline de Alfabetizacao - Tech Challenge Fase 2
 
 Tabelas processadas:
   1. meta_brasil         -> Silver/Meta_brasil/
@@ -19,7 +18,7 @@ from awsglue.utils import getResolvedOptions
 from pyspark.sql.functions import (
     col, upper, trim, when, lit, current_timestamp
 )
-from pyspark.sql.types import IntegerType, DoubleType
+from pyspark.sql.types import IntegerType, DoubleType, LongType
 
 args = getResolvedOptions(sys.argv, ['JOB_NAME'])
 sc = SparkContext()
@@ -196,30 +195,31 @@ print(f"Registros: {df.count()}")
 df.write.mode("overwrite").partitionBy("ano").parquet(f"{SILVER_PATH}/Avaliacao_municipio/")
 print("OK avaliacao_municipio")
 
-
 # ============================================================
-# 6. TS_ALUNO (STREAMING)
+# 6. TS_ALUNO (STREAMING) 
 # ============================================================
 print("\n" + "="*60)
 print("6/6 - SILVER: Ts_aluno (streaming)")
 print("="*60)
 
 try:
-    # Ler TODOS os Parquets recursivamente
-    # Path real: Bronze/Ts_aluno/data_ingestao=YYYY-MM-DD/*.parquet
-    # Colunas em MINUSCULO conforme gravado pela Lambda consumidora
-    df = spark.read.option("recursiveFileLookup", "true").parquet(f"{BRONZE_PATH}/Ts_aluno/")
+    # 1. Leitura
+    from pyspark.sql.functions import to_date, when, lit
+    
+    df = spark.read \
+        .option("recursiveFileLookup", "true") \
+        .option("basePath", f"{BRONZE_PATH}/Ts_aluno/") \
+        .parquet(f"{BRONZE_PATH}/Ts_aluno/")
 
     print(f"Colunas encontradas: {df.columns}")
-    print(f"Total lidos: {df.count()}")
 
-    # Cast dos campos (nomes em minusculo)
+    # 2. Casts
     df = df.withColumn("nu_ano_avaliacao", col("nu_ano_avaliacao").cast(IntegerType()))
     df = df.withColumn("co_uf", col("co_uf").cast(IntegerType()))
     df = df.withColumn("sg_uf", upper(trim(col("sg_uf"))))
-    df = df.withColumn("id_aluno", col("id_aluno").cast("long"))
+    df = df.withColumn("id_aluno", col("id_aluno").cast(LongType()))
     df = df.withColumn("tp_serie", col("tp_serie").cast(IntegerType()))
-    df = df.withColumn("id_escola", col("id_escola").cast("long"))
+    df = df.withColumn("id_escola", col("id_escola").cast(LongType()))
     df = df.withColumn("tp_dependencia", col("tp_dependencia").cast(IntegerType()))
     df = df.withColumn("co_municipio", col("co_municipio").cast(IntegerType()))
     df = df.withColumn("in_presenca_lp", col("in_presenca_lp").cast(IntegerType()))
@@ -233,40 +233,51 @@ try:
     df = df.withColumn("vl_proficiencia_lp", col("vl_proficiencia_lp").cast(DoubleType()))
     df = df.withColumn("in_alfabetizado", col("in_alfabetizado").cast(IntegerType()))
 
-    # Remover sem chave
+    if "_fonte" in df.columns:
+        df = df.withColumn("data_ingestao", 
+            when(col("_fonte") == "base_dos_dados", lit("2026-07-09"))
+            .otherwise(col("data_ingestao"))
+        )
+
+        # Tratamento final da coluna de partição (casting para string/varchar)
+    if "data_ingestao" in df.columns:
+        df = df.withColumn("data_ingestao", col("data_ingestao").cast("string"))
+    
+        df = df.na.fill({"data_ingestao": "data_desconhecida"})
+    else:
+        # Se a coluna nem existir, criamos com data padrão
+        df = df.withColumn("data_ingestao", lit("data_desconhecida"))
+
+    # 3. Limpeza
     df = df.filter(
         col("nu_ano_avaliacao").isNotNull() &
         col("id_aluno").isNotNull() &
         col("co_uf").isNotNull()
     )
-
-    # Validar tp_dependencia
     df = df.filter(col("tp_dependencia").isin(1, 2, 3, 4))
-
-    # Validar proficiencia em range
     df = df.filter(
         (col("vl_proficiencia_lp").isNull()) |
         ((col("vl_proficiencia_lp") >= 400) & (col("vl_proficiencia_lp") <= 1000))
     )
-
-    # Deduplicar
     df = df.dropDuplicates(["nu_ano_avaliacao", "id_aluno"])
 
-    # Remover colunas de metadados da bronze
-    for c in ["_timestamp_ingestao", "_fonte", "_arquivo_original", "data_ingestao"]:
+
+    # 5. Metadados e Escrita
+
+    
+    for c in ["_timestamp_ingestao", "_fonte", "_arquivo_original"]:
         if c in df.columns:
             df = df.drop(c)
-
-    df = adicionar_metadados_silver(df)
-
+    df = adicionar_metadados_silver(df) 
+    
     print(f"Registros apos limpeza: {df.count()}")
-    df.write.mode("overwrite").parquet(f"{SILVER_PATH}/Ts_aluno/")
-    print("OK Ts_aluno gravado na Silver")
+    
+    df.write.mode("overwrite").partitionBy("data_ingestao").parquet(f"{SILVER_PATH}/Ts_aluno/")
+    print("OK Ts_aluno gravado com sucesso")
 
 except Exception as e:
     print(f"ERRO Ts_aluno: {str(e)}")
-    print("Pulando transformacao de alunos.")
-
+    raise e
 
 # ============================================================
 # FINALIZACAO

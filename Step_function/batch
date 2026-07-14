@@ -1,0 +1,59 @@
+{
+  "Comment": "Pipeline Sequencial Completo: Processa TODAS as bases pelas camadas Raw > Bronze > Silver > Gold",
+  "StartAt": "Job_Raw_Para_Bronze",
+  "States": {
+    "Job_Raw_Para_Bronze": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "ingestao_bronze"
+      },
+      "Next": "Job_Bronze_Para_Silver",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "Falha_Pipeline"
+        }
+      ]
+    },
+    "Job_Bronze_Para_Silver": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "ingestao_silver"
+      },
+      "Next": "Job_Silver_Para_Gold",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "Falha_Pipeline"
+        }
+      ]
+    },
+    "Job_Silver_Para_Gold": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "ingestao_gold"
+      },
+      "End": true,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "Falha_Pipeline"
+        }
+      ]
+    },
+    "Falha_Pipeline": {
+      "Type": "Fail",
+      "Cause": "O pipeline falhou porque um dos Glue Jobs (Raw, Bronze ou Silver) apresentou erro.",
+      "Error": "FALHA_NO_ETL"
+    }
+  }
+}

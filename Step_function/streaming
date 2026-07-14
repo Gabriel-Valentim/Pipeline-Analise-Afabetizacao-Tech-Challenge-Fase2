@@ -1,0 +1,87 @@
+{
+  "Comment": "Pipeline Athena Repair -> Bronze-Silver -> Athena Repair Silver -> Silver-Gold",
+  "StartAt": "Atualizar_Particoes_Athena",
+  "States": {
+    "Atualizar_Particoes_Athena": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+      "Parameters": {
+        "QueryString": "MSCK REPAIR TABLE workspace.ts_aluno;",
+        "QueryExecutionContext": {
+          "Database": "workspace"
+        },
+        "ResultConfiguration": {
+          "OutputLocation": "s3://tech-challange-fase2/workspace/Unsaved/logs/"
+        }
+      },
+      "Next": "Job_Bronze_Para_Silver",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "Falha_Pipeline"
+        }
+      ]
+    },
+    "Job_Bronze_Para_Silver": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "ingestao_silver"
+      },
+      "Next": "Reparar_Tabela_Silver",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "Falha_Pipeline"
+        }
+      ]
+    },
+    "Reparar_Tabela_Silver": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+      "Parameters": {
+        "QueryString": "MSCK REPAIR TABLE ts_aluno;",
+        "QueryExecutionContext": {
+          "Database": "workspace_silver"
+        },
+        "ResultConfiguration": {
+          "OutputLocation": "s3://tech-challange-fase2/workspace/Unsaved/logs/"
+        }
+      },
+      "Next": "Job_Silver_Para_Gold",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "Falha_Pipeline"
+        }
+      ]
+    },
+    "Job_Silver_Para_Gold": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "ingestao_gold"
+      },
+      "End": true,
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "Falha_Pipeline"
+        }
+      ]
+    },
+    "Falha_Pipeline": {
+      "Type": "Fail",
+      "Cause": "O pipeline falhou durante o reparo da tabela ou execução dos Jobs.",
+      "Error": "FALHA_NO_ETL"
+    }
+  }
+}
