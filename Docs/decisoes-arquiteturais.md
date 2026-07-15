@@ -107,3 +107,57 @@
 - Dependência administrativa: valores [1, 2, 3, 4]
 - Chaves primárias: não nulas
 - Deduplicação por chave natural
+
+---
+
+## ADR-008: Step Functions para Orquestração
+
+**Contexto:** Coordenar a execução sequencial dos Glue Jobs (Bronze → Silver → Gold) garantindo que cada etapa só execute após o sucesso da anterior, com tratamento de falhas centralizado.
+
+**Decisão:** AWS Step Functions com dois state machines distintos (batch e streaming).
+
+**Trade-offs:**
+- Step Functions: visual, error handling nativo, integração direta com Glue (`.sync`), logs automáticos
+- Airflow (MWAA): mais flexível para DAGs complexos, mas custo mínimo ~$350/mês e overhead operacional
+- Glue Workflows: limitado a Glue Jobs, sem integração com Athena ou Lambda
+- EventBridge Pipes: bom para encadeamento simples, mas menos controle sobre retry e branching
+
+**Justificativa:** Pipeline sequencial simples (3-4 etapas), custo praticamente zero no nosso volume (<1000 transições/mês = free tier), integração nativa com Glue `.sync` (espera job finalizar) e Athena `startQueryExecution.sync`.
+
+**Implementação:**
+- **Batch:** `Raw → Bronze → Silver → Gold` (3 Glue Jobs em sequência)
+- **Streaming:** `Athena REPAIR Bronze → Silver → Athena REPAIR Silver → Gold` (intercala REPAIR para detectar novas partições criadas pela Lambda)
+
+---
+
+## ADR-009: EventBridge para Detecção de Eventos S3
+
+**Contexto:** Definir como disparar os pipelines automaticamente quando novos dados chegam ao S3.
+
+**Decisão:** Amazon EventBridge com regras que detectam `Object Created` em prefixos específicos do S3.
+
+**Trade-offs:**
+- EventBridge: nativo AWS, sem custo para regras S3, filtragem por prefixo, target direto para Step Functions
+- S3 Event Notifications: funcional mas limitado a Lambda/SQS/SNS como destino direto
+- Polling periódico (cron): simples mas desperdiça execuções quando não há dados novos
+
+**Justificativa:** EventBridge é event-driven puro — o pipeline só executa quando há dados novos. Zero custo adicional para detecção de eventos S3. Suporta pattern matching no prefixo do objeto.
+
+**Regras implementadas:**
+- `detector_raw`: detecta objetos criados em `s3://tech-challange-fase2/Raw/` → dispara Step Function batch
+- `detector_streaming`: detecta objetos criados em `s3://tech-challange-fase2/Bronze/` → dispara Step Function streaming
+
+---
+
+## ADR-010: PyArrow na Lambda vs Pandas/Spark
+
+**Contexto:** A Lambda consumidora precisa converter JSON do Kinesis para Parquet e gravar no S3. Lambda tem limite de 256MB de RAM e 15min de timeout.
+
+**Decisão:** Usar PyArrow nativo para serialização Parquet na Lambda.
+
+**Trade-offs:**
+- PyArrow: leve (~30MB), rápido, escrita Parquet direta sem overhead de framework
+- Pandas: funcional mas mais pesado em memória, desnecessário para conversão simples
+- AWS Glue (Spark): não cabe em Lambda, overkill para micro-batches de dezenas de registros
+
+**Justificativa:** PyArrow permite definir schema tipado explícito, é a dependência mais leve para escrita Parquet, e processa lotes do Kinesis em <1 segundo com 256MB de RAM.
